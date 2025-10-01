@@ -106,32 +106,200 @@ async function apiFetch(context: vscode.ExtensionContext, path: string, init?: R
     return res;
 }
 
-async function compileCurrentFile(context: vscode.ExtensionContext) {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) { vscode.window.showErrorMessage('No active editor'); return; }
-    const doc = editor.document;
-    if (!doc.fileName.endsWith('.rfx')) { vscode.window.showErrorMessage('Select a .rfx file'); return; }
-    const content = doc.getText();
-    const projectId = Config.projectId;
-    if (!projectId) { vscode.window.showErrorMessage('Configure reflexible.projectId in settings'); return; }
-    const body = { filePath: vscode.workspace.asRelativePath(doc.uri), content };
-    const res = await apiFetch(context, `/api/v1/projects/${projectId}/rfx/compile`, { method: 'POST', body: JSON.stringify(body) });
-    const data = await res.json() as any;
-    vscode.window.showInformationMessage(data?.result?.output || 'Compilation completed');
+// Helper: Get or create ephemeral project for this session
+async function getEphemeralProject(context: vscode.ExtensionContext): Promise<string> {
+    let projectId = context.workspaceState.get<string>('ephemeralProjectId');
+    if (!projectId) {
+        const res = await apiFetch(context, '/api/v1/projects/ephemeral', { 
+            method: 'POST', 
+            body: JSON.stringify({ name: 'VSCode Session' }) 
+        });
+        const data = await res.json() as any;
+        projectId = data.project.id;
+        await context.workspaceState.update('ephemeralProjectId', projectId);
+    }
+    return projectId!;
 }
 
-async function verifyCurrentFile(context: vscode.ExtensionContext) {
+// Helper: Find all .rfx files in workspace
+async function findWorkspaceRfxFiles(): Promise<vscode.Uri[]> {
+    return await vscode.workspace.findFiles('**/*.rfx', '**/node_modules/**');
+}
+
+// Helper: Upload workspace .rfx files to project
+async function uploadWorkspaceFiles(context: vscode.ExtensionContext, projectId: string): Promise<number> {
+    const rfxFiles = await findWorkspaceRfxFiles();
+    if (rfxFiles.length === 0) return 0;
+
+    const files = await Promise.all(rfxFiles.map(async (uri) => {
+        const content = await vscode.workspace.fs.readFile(uri);
+        const relativePath = vscode.workspace.asRelativePath(uri);
+        return {
+            path: relativePath,
+            content: Buffer.from(content).toString('utf-8')
+        };
+    }));
+
+    const res = await apiFetch(context, `/api/v1/projects/${projectId}/files/upload-batch`, {
+        method: 'POST',
+        body: JSON.stringify({ files })
+    });
+    const data = await res.json() as any;
+    return data.filesUploaded || 0;
+}
+
+// Helper: Download and save artifacts to workspace
+async function downloadArtifacts(context: vscode.ExtensionContext, sessionId: string, outputChannel: vscode.OutputChannel): Promise<void> {
+    const res = await apiFetch(context, `/api/v1/sessions/${sessionId}/artifacts`, { method: 'GET' });
+    const data = await res.json() as any;
+    
+    if (!data.artifacts || data.artifacts.length === 0) {
+        outputChannel.appendLine('No artifacts to download');
+        return;
+    }
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        vscode.window.showErrorMessage('No workspace folder open');
+        return;
+    }
+
+    const outputDir = vscode.Uri.joinPath(workspaceFolders[0].uri, 'output');
+    await vscode.workspace.fs.createDirectory(outputDir);
+
+    for (const artifact of data.artifacts) {
+        const filePath = vscode.Uri.joinPath(outputDir, artifact.path.replace(/^output\//, ''));
+        const dirPath = vscode.Uri.joinPath(filePath, '..');
+        await vscode.workspace.fs.createDirectory(dirPath);
+        await vscode.workspace.fs.writeFile(filePath, Buffer.from(artifact.content, 'utf-8'));
+        outputChannel.appendLine(`Downloaded: ${artifact.path}`);
+    }
+
+    vscode.window.showInformationMessage(`Downloaded ${data.artifacts.length} artifact(s) to output/`);
+}
+
+async function compileCurrentFile(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
     const editor = vscode.window.activeTextEditor;
     if (!editor) { vscode.window.showErrorMessage('No active editor'); return; }
     const doc = editor.document;
     if (!doc.fileName.endsWith('.rfx')) { vscode.window.showErrorMessage('Select a .rfx file'); return; }
+    
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Compiling RFX file...',
+        cancellable: false
+    }, async (progress) => {
+        try {
+            // Get or create ephemeral project
+            progress.report({ message: 'Creating project...' });
+            const projectId = await getEphemeralProject(context);
+            
+            // Upload workspace context
+            progress.report({ message: 'Uploading workspace files...' });
+            const filesUploaded = await uploadWorkspaceFiles(context, projectId);
+            outputChannel.appendLine(`Uploaded ${filesUploaded} workspace file(s)`);
+            
+            // Compile
+            progress.report({ message: 'Compiling...' });
     const content = doc.getText();
-    const projectId = Config.projectId;
-    if (!projectId) { vscode.window.showErrorMessage('Configure reflexible.projectId in settings'); return; }
+    const body = { filePath: vscode.workspace.asRelativePath(doc.uri), content };
+            const res = await apiFetch(context, `/api/v1/projects/${projectId}/rfx/compile`, { 
+                method: 'POST', 
+                body: JSON.stringify(body) 
+            });
+            const data = await res.json() as any;
+            
+            outputChannel.appendLine('='.repeat(60));
+            outputChannel.appendLine('COMPILATION RESULT:');
+            outputChannel.appendLine(data?.result?.output || 'Compilation completed');
+            if (data?.result?.warnings && data.result.warnings.length > 0) {
+                outputChannel.appendLine('\nWarnings:');
+                data.result.warnings.forEach((w: string) => outputChannel.appendLine(`  - ${w}`));
+            }
+            if (data?.errors && data.errors.length > 0) {
+                outputChannel.appendLine('\nErrors:');
+                data.errors.forEach((e: string) => outputChannel.appendLine(`  ❌ ${e}`));
+            }
+            outputChannel.appendLine('='.repeat(60));
+            outputChannel.show();
+            
+            if (data.success) {
+                vscode.window.showInformationMessage('✅ Compilation successful!', 'View Output').then(choice => {
+                    if (choice === 'View Output') outputChannel.show();
+                });
+            } else {
+                vscode.window.showErrorMessage('❌ Compilation failed - see Output for details', 'View Output').then(choice => {
+                    if (choice === 'View Output') outputChannel.show();
+                });
+            }
+        } catch (error: any) {
+            outputChannel.appendLine('ERROR: ' + error.message);
+            vscode.window.showErrorMessage('Compilation failed: ' + error.message);
+        }
+    });
+}
+
+async function verifyCurrentFile(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) { vscode.window.showErrorMessage('No active editor'); return; }
+    const doc = editor.document;
+    if (!doc.fileName.endsWith('.rfx')) { vscode.window.showErrorMessage('Select a .rfx file'); return; }
+    
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Verifying RFX file...',
+        cancellable: false
+    }, async (progress) => {
+        try {
+            // Get or create ephemeral project
+            progress.report({ message: 'Creating project...' });
+            const projectId = await getEphemeralProject(context);
+            
+            // Upload workspace context
+            progress.report({ message: 'Uploading workspace files...' });
+            const filesUploaded = await uploadWorkspaceFiles(context, projectId);
+            outputChannel.appendLine(`Uploaded ${filesUploaded} workspace file(s)`);
+            
+            // Verify
+            progress.report({ message: 'Verifying...' });
+    const content = doc.getText();
     const body = { filePath: vscode.workspace.asRelativePath(doc.uri), content, checkLevel: 'standard' };
-    const res = await apiFetch(context, `/api/v1/projects/${projectId}/rfx/verify`, { method: 'POST', body: JSON.stringify(body) });
-    const data = await res.json() as any;
-    vscode.window.showInformationMessage(`Verify: ${data?.result?.status}`);
+            const res = await apiFetch(context, `/api/v1/projects/${projectId}/rfx/verify`, { 
+                method: 'POST', 
+                body: JSON.stringify(body) 
+            });
+            const data = await res.json() as any;
+            
+            outputChannel.appendLine('='.repeat(60));
+            outputChannel.appendLine('VERIFICATION RESULT:');
+            outputChannel.appendLine(`Status: ${data?.result?.status || 'Unknown'}`);
+            if (data?.result?.issues && data.result.issues.length > 0) {
+                outputChannel.appendLine('\nIssues:');
+                data.result.issues.forEach((issue: any) => {
+                    outputChannel.appendLine(`  [${issue.severity}] Line ${issue.line}: ${issue.message}`);
+                });
+            }
+            if (data?.result?.warnings && data.result.warnings.length > 0) {
+                outputChannel.appendLine('\nWarnings:');
+                data.result.warnings.forEach((w: string) => outputChannel.appendLine(`  - ${w}`));
+            }
+            outputChannel.appendLine('='.repeat(60));
+            outputChannel.show();
+            
+            if (data.success && data.result.status === 'passed') {
+                vscode.window.showInformationMessage('✅ Verification passed!', 'View Details').then(choice => {
+                    if (choice === 'View Details') outputChannel.show();
+                });
+            } else {
+                vscode.window.showWarningMessage('⚠️ Verification found issues - see Output', 'View Details').then(choice => {
+                    if (choice === 'View Details') outputChannel.show();
+                });
+            }
+        } catch (error: any) {
+            outputChannel.appendLine('ERROR: ' + error.message);
+            vscode.window.showErrorMessage('Verification failed: ' + error.message);
+        }
+    });
 }
 
 class ChatViewProvider implements vscode.WebviewViewProvider {
@@ -163,7 +331,7 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
         
         try {
             this.outputChannel.appendLine('Setting webview options...');
-            webviewView.webview.options = { enableScripts: true };
+        webviewView.webview.options = { enableScripts: true };
             this.outputChannel.appendLine('Webview options set');
             
             // Load the full chat interface HTML
@@ -205,7 +373,7 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
                     const apiKey = await ensureApiKey(this.context);
                     this.outputChannel.appendLine('Authentication completed, API key: ' + !!apiKey);
                     if (apiKey) {
-                        webviewView.webview.postMessage({ type: 'authed' });
+                webviewView.webview.postMessage({ type: 'authed' });
                         vscode.window.showInformationMessage('✅ Successfully authenticated with Reflexible');
                         this.outputChannel.appendLine('Sent authed message to webview');
                     } else {
@@ -223,29 +391,46 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
             }
             
             if (msg.type === 'startSession') {
-                this.outputChannel.appendLine('Starting session with message: ' + msg.message);
+                this.outputChannel.appendLine('Starting AI session with message: ' + msg.message);
                 try {
-                    const projectId = Config.projectId;
+                    // Get or create ephemeral project
+                    this.outputChannel.appendLine('Getting ephemeral project...');
+                    const projectId = await getEphemeralProject(this.context);
                     this.outputChannel.appendLine('Project ID: ' + projectId);
-                    if (!projectId) {
-                        throw new Error('Please configure reflexible.projectId in settings');
-                    }
                     
-                    this.outputChannel.appendLine('Calling API to dispatch agent...');
+                    // Upload workspace .rfx files for context
+                    this.outputChannel.appendLine('Uploading workspace .rfx files...');
+                    const filesUploaded = await uploadWorkspaceFiles(this.context, projectId);
+                    this.outputChannel.appendLine(`Uploaded ${filesUploaded} file(s) for context`);
+                    webviewView.webview.postMessage({ 
+                        type: 'status', 
+                        message: `Uploaded ${filesUploaded} workspace file(s) for context` 
+                    });
+                    
+                    // Start agent session with compute config
+                    this.outputChannel.appendLine('Dispatching AI agent...');
+                    const computeConfig = msg.computeConfig || 'basic';
                     const res = await apiFetch(this.context, '/api/v1/agent/dispatch', { 
                         method: 'POST', 
-                        body: JSON.stringify({ projectId, message: msg.message }) 
+                        body: JSON.stringify({ 
+                            projectId, 
+                            message: msg.message,
+                            computeConfig 
+                        }) 
                     });
                     const data = await res.json() as any;
                     const sessionId = data.sessionId as string;
-                    this.outputChannel.appendLine('Received session ID: ' + sessionId);
+                    this.outputChannel.appendLine('Session ID: ' + sessionId);
                     
                     if (!sessionId) {
                         throw new Error('No session ID returned from server');
                     }
                     
+                    // Store session ID for later
+                    await this.context.workspaceState.update('currentSessionId', sessionId);
+                    
                     webviewView.webview.postMessage({ type: 'session', sessionId });
-                    this.outputChannel.appendLine('Starting SSE stream...');
+                    this.outputChannel.appendLine('Starting SSE stream for progress updates...');
                     this.streamSse(webviewView, sessionId).catch((e: any) => {
                         this.outputChannel.appendLine('SSE stream error: ' + e);
                     });
@@ -261,15 +446,36 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
             }
             
             if (msg.type === 'stopSession') {
+                this.outputChannel.appendLine('Stopping session: ' + msg.sessionId);
                 try {
                     await apiFetch(this.context, '/api/v1/agent/stop', { 
                         method: 'POST', 
                         body: JSON.stringify({ sessionId: msg.sessionId }) 
                     });
-                    vscode.window.showInformationMessage('Session stopped');
+                    vscode.window.showInformationMessage('⏹️ Session stopped');
+                    this.outputChannel.appendLine('Session stopped successfully');
                 } catch (e: any) {
                     this.outputChannel.appendLine('Failed to stop session: ' + e);
                 }
+            }
+            
+            if (msg.type === 'downloadArtifacts') {
+                this.outputChannel.appendLine('Downloading artifacts for session: ' + msg.sessionId);
+                try {
+                    await downloadArtifacts(this.context, msg.sessionId, this.outputChannel);
+                    webviewView.webview.postMessage({ type: 'artifactsDownloaded' });
+                } catch (e: any) {
+                    const errorMsg = e?.message || String(e);
+                    this.outputChannel.appendLine('Failed to download artifacts: ' + errorMsg);
+                    vscode.window.showErrorMessage('Failed to download artifacts: ' + errorMsg);
+                }
+            }
+            
+            if (msg.type === 'newSession') {
+                this.outputChannel.appendLine('Starting new session - clearing context');
+                await this.context.workspaceState.update('ephemeralProjectId', undefined);
+                await this.context.workspaceState.update('currentSessionId', undefined);
+                this.outputChannel.appendLine('Session context cleared');
             }
         });
     }
@@ -385,13 +591,28 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
     
     <div style="margin-bottom: 12px;">
       <label for="msg" style="display: block; margin-bottom: 4px; font-weight: bold;">Message:</label>
-      <input id="msg" placeholder="Describe your goal (e.g., 'compile my RFX file')..." />
+      <input id="msg" placeholder="Describe what you want the AI to do..." />
     </div>
     
-    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+    <div style="margin-bottom: 12px;">
+      <label for="compute" style="display: block; margin-bottom: 4px; font-weight: bold;">Compute Config:</label>
+      <select id="compute" style="width: 100%; padding: 6px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 2px;">
+        <option value="basic">Basic (Fast, Lower Cost)</option>
+        <option value="pro">Pro (Advanced Reasoning)</option>
+      </select>
+    </div>
+    
+    <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
       <button id="startBtn">▶️ Start Session</button>
-      <button id="stopBtn" disabled>⏹️ Stop Session</button>
-      <button id="reAuthBtn" style="margin-left: auto;">🔄 Re-authenticate</button>
+      <button id="stopBtn" disabled>⏹️ Stop</button>
+      <button id="downloadBtn" disabled>⬇️ Download Artifacts</button>
+      <button id="newSessionBtn">🔄 New Session</button>
+      <button id="reAuthBtn" style="margin-left: auto;">🔐 Re-authenticate</button>
+    </div>
+    
+    <div id="todos" class="hidden" style="margin-bottom: 12px; padding: 12px; background: var(--vscode-editor-background); border-radius: 4px; border: 1px solid var(--vscode-input-border);">
+      <h4 style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold;">Agent Progress:</h4>
+      <ul id="todoList" style="list-style: none; padding: 0; margin: 0; font-size: 11px;"></ul>
     </div>
     
     <div id="log"></div>
@@ -409,10 +630,15 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
     const reAuthBtn = document.getElementById('reAuthBtn');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const newSessionBtn = document.getElementById('newSessionBtn');
     const msgInput = document.getElementById('msg');
+    const computeSelect = document.getElementById('compute');
     const log = document.getElementById('log');
     const statusMsg = document.getElementById('statusMsg');
     const errorMsg = document.getElementById('errorMsg');
+    const todosDiv = document.getElementById('todos');
+    const todoList = document.getElementById('todoList');
 
     function showError(msg) {
       errorMsg.textContent = msg;
@@ -463,12 +689,17 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
         showError('Please enter a message');
         return;
       }
+      const computeConfig = computeSelect.value;
       hideMessages();
       appendLog('Starting session: ' + message, 'info');
+      appendLog('Compute config: ' + computeConfig, 'info');
       startBtn.disabled = true;
       stopBtn.disabled = false;
+      downloadBtn.disabled = true;
       msgInput.disabled = true;
-      vscode.postMessage({ type: 'startSession', message });
+      computeSelect.disabled = true;
+      todosDiv.classList.remove('hidden');
+      vscode.postMessage({ type: 'startSession', message, computeConfig });
     };
 
     stopBtn.onclick = () => {
@@ -478,12 +709,49 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
       }
       resetUI();
     };
+    
+    downloadBtn.onclick = () => {
+      if (sessionId) {
+        appendLog('Downloading artifacts...', 'info');
+        downloadBtn.disabled = true;
+        vscode.postMessage({ type: 'downloadArtifacts', sessionId });
+      }
+    };
+    
+    newSessionBtn.onclick = () => {
+      if (confirm('Start a new session? This will clear the current context.')) {
+        sessionId = null;
+        todoList.innerHTML = '';
+        todosDiv.classList.add('hidden');
+        log.textContent = '';
+        appendLog('New session started - context cleared', 'success');
+        vscode.postMessage({ type: 'newSession' });
+      }
+    };
 
     function resetUI() {
       startBtn.disabled = false;
       stopBtn.disabled = true;
+      downloadBtn.disabled = false;
       msgInput.disabled = false;
+      computeSelect.disabled = false;
       sessionId = null;
+    }
+    
+    function updateTodos(todos) {
+      if (!todos || todos.length === 0) return;
+      todoList.innerHTML = '';
+      todos.forEach(todo => {
+        const li = document.createElement('li');
+        li.style.padding = '4px 0';
+        const icon = todo.status === 'completed' ? '✅' : 
+                     todo.status === 'in_progress' ? '⏳' : 
+                     todo.status === 'cancelled' ? '❌' : '⬜';
+        li.textContent = \`\${icon} \${todo.content}\`;
+        if (todo.status === 'completed') li.style.opacity = '0.6';
+        todoList.appendChild(li);
+      });
+      todosDiv.classList.remove('hidden');
     }
 
     // Handle messages from extension
@@ -501,10 +769,15 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
         switchToLogin();
       }
       
+      if (m.type === 'status') {
+        appendLog(m.message, 'info');
+      }
+      
       if (m.type === 'session') {
         sessionId = m.sessionId;
         showStatus('Session started: ' + sessionId);
         appendLog('Session ID: ' + sessionId, 'success');
+        downloadBtn.disabled = false;
       }
       
       if (m.type === 'sessionError') {
@@ -514,7 +787,30 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
       }
       
       if (m.type === 'sse') {
-        appendLog(JSON.stringify(m.data, null, 2), 'info');
+        const data = m.data;
+        // Handle different SSE event types
+        if (data.type === 'progress') {
+          appendLog('Progress: ' + data.message, 'info');
+        } else if (data.type === 'todo_update' && data.todos) {
+          updateTodos(data.todos);
+        } else if (data.type === 'step_complete') {
+          appendLog('Step completed: ' + data.step, 'success');
+        } else if (data.type === 'error') {
+          appendLog('Error: ' + data.message, 'error');
+        } else if (data.type === 'complete') {
+          appendLog('Session completed successfully!', 'success');
+          showStatus('✅ Session completed - artifacts ready to download');
+          resetUI();
+          downloadBtn.disabled = false;
+        } else {
+          appendLog(JSON.stringify(data, null, 2), 'info');
+        }
+      }
+      
+      if (m.type === 'artifactsDownloaded') {
+        appendLog('Artifacts downloaded to output/ folder', 'success');
+        showStatus('✅ Artifacts saved to workspace');
+        downloadBtn.disabled = true;
       }
 
       if (m.type === 'checkAuth') {
@@ -582,15 +878,21 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('reflexible.authenticate', async () => {
             outputChannel.appendLine('Authenticate command triggered');
-            await ensureApiKey(context).then(() => vscode.window.showInformationMessage('Authenticated'));
+            await ensureApiKey(context).then(() => vscode.window.showInformationMessage('✅ Authenticated with Reflexible'));
         }),
         vscode.commands.registerCommand('reflexible.compileFile', async () => {
             outputChannel.appendLine('CompileFile command triggered');
-            return compileCurrentFile(context);
+            return compileCurrentFile(context, outputChannel);
         }),
         vscode.commands.registerCommand('reflexible.verifyFile', async () => {
             outputChannel.appendLine('VerifyFile command triggered');
-            return verifyCurrentFile(context);
+            return verifyCurrentFile(context, outputChannel);
+        }),
+        vscode.commands.registerCommand('reflexible.newSession', async () => {
+            outputChannel.appendLine('New session command triggered');
+            await context.workspaceState.update('ephemeralProjectId', undefined);
+            await context.workspaceState.update('currentSessionId', undefined);
+            vscode.window.showInformationMessage('🔄 New session started - previous context cleared');
         }),
         vscode.commands.registerCommand('reflexible.openPanel', () => {
             outputChannel.appendLine('Open Panel command triggered');
