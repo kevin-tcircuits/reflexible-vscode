@@ -464,6 +464,17 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
                 try {
                     await downloadArtifacts(this.context, msg.sessionId, this.outputChannel);
                     webviewView.webview.postMessage({ type: 'artifactsDownloaded' });
+                    
+                    // Cleanup ephemeral project after download
+                    const projectId = this.context.workspaceState.get<string>('ephemeralProjectId');
+                    if (projectId) {
+                        this.outputChannel.appendLine('Cleaning up ephemeral project: ' + projectId);
+                        await apiFetch(this.context, `/api/v1/projects/${projectId}/cleanup`, { 
+                            method: 'DELETE' 
+                        });
+                        await this.context.workspaceState.update('ephemeralProjectId', undefined);
+                        this.outputChannel.appendLine('Ephemeral project cleaned up');
+                    }
                 } catch (e: any) {
                     const errorMsg = e?.message || String(e);
                     this.outputChannel.appendLine('Failed to download artifacts: ' + errorMsg);
@@ -473,6 +484,21 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
             
             if (msg.type === 'newSession') {
                 this.outputChannel.appendLine('Starting new session - clearing context');
+                
+                // Cleanup old ephemeral project if it exists
+                const oldProjectId = this.context.workspaceState.get<string>('ephemeralProjectId');
+                if (oldProjectId) {
+                    try {
+                        this.outputChannel.appendLine('Cleaning up old ephemeral project: ' + oldProjectId);
+                        await apiFetch(this.context, `/api/v1/projects/${oldProjectId}/cleanup`, { 
+                            method: 'DELETE' 
+                        });
+                        this.outputChannel.appendLine('Old project cleaned up');
+                    } catch (e) {
+                        this.outputChannel.appendLine('Failed to cleanup old project (may already be deleted): ' + e);
+                    }
+                }
+                
                 await this.context.workspaceState.update('ephemeralProjectId', undefined);
                 await this.context.workspaceState.update('currentSessionId', undefined);
                 this.outputChannel.appendLine('Session context cleared');
