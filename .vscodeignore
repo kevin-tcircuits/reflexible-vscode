@@ -1,0 +1,9 @@
+node_modules
+out/test
+**/*.map
+**/*.ts
+.vscode/**
+.git/**
+**/*.log
+
+

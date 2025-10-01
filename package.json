@@ -1,0 +1,88 @@
+{
+  "name": "reflexible-vscode",
+  "displayName": "Reflexible",
+  "description": "Reflexible sidebar chat and workflow integration",
+  "version": "0.0.2",
+  "publisher": "thinkcircuits",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thinkcircuits/reflexible"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Reflexible",
+      "properties": {
+        "reflexible.baseUrl": {
+          "type": "string",
+          "default": "https://reflexible-web-dev.fly.dev",
+          "description": "Base URL of Reflexible SaaS"
+        },
+        "reflexible.projectId": {
+          "type": "string",
+          "description": "Default project ID"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "reflexible.authenticate",
+        "title": "Reflexible: Authenticate"
+      },
+      {
+        "command": "reflexible.compileFile",
+        "title": "Reflexible: Compile RFX File"
+      },
+      {
+        "command": "reflexible.verifyFile",
+        "title": "Reflexible: Verify RFX File"
+      },
+      {
+        "command": "reflexible.openPanel",
+        "title": "Reflexible: Open Chat Panel"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "reflexible",
+          "title": "Reflexible",
+          "icon": "media/logo.svg"
+        }
+      ]
+    },
+    "views": {
+      "reflexible": [
+        {
+          "type": "webview",
+          "id": "reflexible.chatView",
+          "name": "Chat"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.1",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.0",
+    "tslib": "^2.6.2",
+    "typescript": "^5.4.0"
+  }
+}

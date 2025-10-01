@@ -1,0 +1,54 @@
+Think Circuits LLC Software License Agreement
+
+Copyright (c) 2024 Think Circuits LLC. All rights reserved.
+
+IMPORTANT: PLEASE READ THIS LICENSE CAREFULLY BEFORE USING THE SOFTWARE.
+By installing, accessing, or using any part of the Software, you agree to be bound by the terms of this License Agreement ("Agreement"). If you do not agree to these terms, do not install or use the Software.
+
+1. Definitions
+- "Software" means the ReflexScript codebase and all associated source code, binaries, documentation, and materials distributed by Think Circuits LLC.
+- "Licensee" means the individual or legal entity that accesses or uses the Software.
+
+2. License Grant
+Subject to the terms of this Agreement, Think Circuits LLC grants Licensee a limited, non-exclusive, non-transferable, non-sublicensable, revocable license to install and use the Software internally for evaluation, development, and testing purposes. Any production use, commercial use, distribution, hosting, or offering of the Software or derivative works requires a separate written agreement with Think Circuits LLC.
+
+3. Restrictions
+Except as expressly permitted in Section 2, Licensee shall not:
+- Copy, modify, translate, adapt, or create derivative works of the Software;
+- Distribute, sell, sublicense, lease, rent, loan, or otherwise make the Software available to any third party;
+- Use the Software to provide services to third parties (including as a service bureau, SaaS, or cloud service);
+- Remove, alter, or obscure any proprietary notices or marks on or in the Software;
+- Reverse engineer, decompile, or disassemble the Software except to the extent such restriction is expressly prohibited by applicable law;
+- Use the Software for competitive analysis, benchmarking publication, or to build a competing product.
+
+4. Ownership
+The Software is licensed, not sold. Think Circuits LLC and its licensors retain all right, title, and interest in and to the Software and all intellectual property rights therein. No rights are granted by implication, estoppel, or otherwise except as expressly set forth in this Agreement.
+
+5. Third-Party Materials
+The Software may include or interoperate with third-party components that are provided under separate license terms. Such third-party terms govern Licensee’s use of those components. A list of third-party notices may be provided in accompanying files or documentation.
+
+6. Confidentiality
+Any non-public information about the Software, including performance data, benchmarks, and feature roadmaps, is the confidential information of Think Circuits LLC. Licensee shall protect such information and not disclose it to any third party without prior written consent.
+
+7. Term and Termination
+This Agreement is effective until terminated. Think Circuits LLC may terminate this Agreement immediately upon notice if Licensee breaches any term. Upon termination, Licensee must cease all use of the Software and destroy all copies. Sections 3–12 survive termination.
+
+8. Disclaimer of Warranties
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND THAT THE SOFTWARE WILL BE ERROR-FREE OR UNINTERRUPTED. LICENSEE’S USE IS AT LICENSEE’S OWN RISK.
+
+9. Limitation of Liability
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL THINK CIRCUITS LLC BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING OUT OF OR IN CONNECTION WITH THIS AGREEMENT OR THE USE OF THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. THINK CIRCUITS LLC’S TOTAL LIABILITY FOR ALL CLAIMS SHALL NOT EXCEED ONE HUNDRED U.S. DOLLARS (US$100) OR THE AMOUNT PAID BY LICENSEE FOR THE SOFTWARE, WHICHEVER IS GREATER.
+
+10. Export Compliance
+Licensee must comply with all applicable export control laws and regulations in the United States and other jurisdictions when using or exporting the Software.
+
+11. Government Use
+The Software is commercial computer software. If acquired by or on behalf of a U.S. governmental entity, use, duplication, or disclosure is subject to the restrictions in FAR 12.212 and DFARS 227.7202, as applicable.
+
+12. Governing Law; Venue
+This Agreement is governed by the laws of the State of Delaware, USA, without regard to its conflicts of law principles. The exclusive jurisdiction and venue for any dispute arising out of or relating to this Agreement shall be the state and federal courts located in Delaware.
+
+13. Entire Agreement
+This Agreement constitutes the entire agreement between the parties regarding the Software and supersedes all prior or contemporaneous understandings. Any amendments must be in writing and signed by Think Circuits LLC.
+
+Contact: For licensing inquiries, contact Think Circuits LLC at legal@thinkcircuits.com.
