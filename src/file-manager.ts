@@ -34,17 +34,18 @@ export async function downloadArtifacts(
     sessionId: string, 
     outputChannel: vscode.OutputChannel
 ): Promise<number> {
+    // Verify workspace folder exists
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+        vscode.window.showErrorMessage('No workspace folder open - cannot download artifacts');
+        return 0;
+    }
+    
     const res = await apiFetch(context, `/api/v1/sessions/${sessionId}/artifacts`, { method: 'GET' });
     const data = await res.json() as any;
     
     if (!data.artifacts || data.artifacts.length === 0) {
         outputChannel.appendLine('No artifacts to download');
-        return 0;
-    }
-
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders) {
-        vscode.window.showErrorMessage('No workspace folder open');
         return 0;
     }
 

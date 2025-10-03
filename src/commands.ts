@@ -7,6 +7,20 @@ export async function compileCurrentFile(
     context: vscode.ExtensionContext, 
     outputChannel: vscode.OutputChannel
 ): Promise<void> {
+    // Check workspace folder
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+        vscode.window.showErrorMessage(
+            'Please open a folder in your workspace. Compiled files will be saved there.',
+            'Open Folder'
+        ).then(selection => {
+            if (selection === 'Open Folder') {
+                vscode.commands.executeCommand('vscode.openFolder');
+            }
+        });
+        return;
+    }
+    
     const editor = vscode.window.activeTextEditor;
     if (!editor) { 
         vscode.window.showErrorMessage('No active editor'); 
@@ -27,11 +41,6 @@ export async function compileCurrentFile(
             // Get or create ephemeral project
             progress.report({ message: 'Creating project...' });
             const projectId = await getEphemeralProject(context);
-            
-            // Upload workspace context
-            progress.report({ message: 'Uploading workspace files...' });
-            const filesUploaded = await uploadWorkspaceFiles(context, projectId);
-            outputChannel.appendLine(`Uploaded ${filesUploaded} workspace file(s)`);
             
             // Compile
             progress.report({ message: 'Compiling...' });
@@ -79,6 +88,20 @@ export async function verifyCurrentFile(
     context: vscode.ExtensionContext, 
     outputChannel: vscode.OutputChannel
 ): Promise<void> {
+    // Check workspace folder
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+        vscode.window.showErrorMessage(
+            'Please open a folder in your workspace. Verification results will be saved there.',
+            'Open Folder'
+        ).then(selection => {
+            if (selection === 'Open Folder') {
+                vscode.commands.executeCommand('vscode.openFolder');
+            }
+        });
+        return;
+    }
+    
     const editor = vscode.window.activeTextEditor;
     if (!editor) { 
         vscode.window.showErrorMessage('No active editor'); 
@@ -99,11 +122,6 @@ export async function verifyCurrentFile(
             // Get or create ephemeral project
             progress.report({ message: 'Creating project...' });
             const projectId = await getEphemeralProject(context);
-            
-            // Upload workspace context
-            progress.report({ message: 'Uploading workspace files...' });
-            const filesUploaded = await uploadWorkspaceFiles(context, projectId);
-            outputChannel.appendLine(`Uploaded ${filesUploaded} workspace file(s)`);
             
             // Verify
             progress.report({ message: 'Verifying...' });
@@ -156,6 +174,20 @@ export async function verifyCurrentFile(
 export async function authenticateCommand(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel): Promise<void> {
     outputChannel.appendLine('Authenticate command triggered');
     await ensureApiKey(context).then(() => vscode.window.showInformationMessage('✅ Authenticated with Reflexible'));
+}
+
+export async function reconfigureApiKeyCommand(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel): Promise<void> {
+    outputChannel.appendLine('Reconfigure API key command triggered');
+    
+    // Clear existing API key
+    await context.secrets.delete('reflexible.apiKey');
+    outputChannel.appendLine('Existing API key cleared');
+    
+    // Prompt for new API key
+    await ensureApiKey(context).then(() => {
+        vscode.window.showInformationMessage('✅ API key reconfigured successfully');
+        outputChannel.appendLine('New API key configured');
+    });
 }
 
 export async function newSessionCommand(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel): Promise<void> {

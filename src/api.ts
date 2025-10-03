@@ -47,28 +47,46 @@ export async function apiFetch(context: vscode.ExtensionContext, path: string, i
         },
     });
     
-    // Handle expired or invalid API key
-    if (res.status === 401 || res.status === 403) {
-        const text = await res.text().catch(() => '');
-        if (text.toLowerCase().includes('expired') || 
-            text.toLowerCase().includes('invalid') || 
-            text.toLowerCase().includes('unauthorized')) {
-            // Clear the stored API key
-            await context.secrets.delete('reflexible.apiKey');
-            vscode.window.showWarningMessage(
-                'Your Reflexible API key has expired or is invalid. Please re-authenticate.', 
-                'Authenticate Now'
-            ).then(selection => {
-                if (selection === 'Authenticate Now') {
-                    vscode.commands.executeCommand('reflexible.authenticate');
-                }
-            });
-            throw new Error('API key expired or invalid - please re-authenticate');
-        }
-    }
-    
+    // Handle errors with detailed logging
     if (!res.ok) {
         const text = await res.text().catch(() => '');
+        const errorDetails = `API Error [${res.status}]:\nEndpoint: ${path}\nResponse: ${text}`;
+        
+        if (res.status === 401 || res.status === 403) {
+            // Log detailed 403/401 error
+            console.error('[Reflexible API]', errorDetails);
+            
+            if (text.toLowerCase().includes('expired') || 
+                text.toLowerCase().includes('invalid') || 
+                text.toLowerCase().includes('unauthorized') ||
+                text.toLowerCase().includes('access denied')) {
+                // Clear the stored API key
+                await context.secrets.delete('reflexible.apiKey');
+                vscode.window.showErrorMessage(
+                    `Authentication failed (${res.status}): ${text.substring(0, 100)}`,
+                    'Authenticate Now',
+                    'Details'
+                ).then(selection => {
+                    if (selection === 'Authenticate Now') {
+                        vscode.commands.executeCommand('reflexible.authenticate');
+                    } else if (selection === 'Details') {
+                        vscode.window.showErrorMessage(errorDetails);
+                    }
+                });
+                throw new Error(`Authentication failed (${res.status}): ${text}`);
+            }
+        }
+        
+        // Show detailed error for all other errors
+        vscode.window.showErrorMessage(
+            `Reflexible API Error (${res.status}): ${text.substring(0, 200)}`,
+            'View Details'
+        ).then(selection => {
+            if (selection === 'View Details') {
+                vscode.window.showErrorMessage(errorDetails);
+            }
+        });
+        
         throw new Error(`${res.status} ${text}`);
     }
     return res;

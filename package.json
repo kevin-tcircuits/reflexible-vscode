@@ -16,7 +16,7 @@
     "Other"
   ],
   "activationEvents": [
-    "*"
+    "onLanguage:rfx"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -41,6 +41,10 @@
         "title": "Reflexible: Authenticate"
       },
       {
+        "command": "reflexible.reconfigureApiKey",
+        "title": "Reflexible: Reconfigure API Key"
+      },
+      {
         "command": "reflexible.compileFile",
         "title": "Reflexible: Compile RFX File"
       },
@@ -53,12 +57,68 @@
         "title": "Reflexible: Start New Session"
       },
       {
-        "command": "reflexible.startAISession",
-        "title": "Reflexible: Start AI Session"
-      },
-      {
         "command": "reflexible.selectComputeMode",
         "title": "Reflexible: Select Compute Mode"
+      },
+      {
+        "command": "reflexible.openChat",
+        "title": "Reflexible: Open AI Chat"
+      },
+      {
+        "command": "reflexible.renameProject",
+        "title": "Rename Project"
+      },
+      {
+        "command": "reflexible.deleteProject",
+        "title": "Delete Project"
+      },
+      {
+        "command": "reflexible.renameFile",
+        "title": "Rename File"
+      },
+      {
+        "command": "reflexible.deleteFile",
+        "title": "Delete File"
+      },
+      {
+        "command": "reflexible.saveFileToLocal",
+        "title": "Save to Local Drive"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "reflexible.renameProject",
+          "when": "view == reflexible.projectTree && viewItem == project",
+          "group": "1_project"
+        },
+        {
+          "command": "reflexible.deleteProject",
+          "when": "view == reflexible.projectTree && viewItem == project",
+          "group": "1_project"
+        },
+        {
+          "command": "reflexible.renameFile",
+          "when": "view == reflexible.projectTree && viewItem == file",
+          "group": "2_file"
+        },
+        {
+          "command": "reflexible.deleteFile",
+          "when": "view == reflexible.projectTree && viewItem == file",
+          "group": "2_file"
+        },
+        {
+          "command": "reflexible.saveFileToLocal",
+          "when": "view == reflexible.projectTree && (viewItem == file || viewItem == binary)",
+          "group": "2_file"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "reflexible.deleteFile",
+        "key": "delete",
+        "when": "focusedView == reflexible.projectTree && (viewItem == file || viewItem == binary)"
       }
     ],
     "viewsContainers": {
@@ -73,8 +133,8 @@
     "views": {
       "reflexible": [
         {
-          "id": "reflexible.chatView",
-          "name": "Chat"
+          "id": "reflexible.projectTree",
+          "name": "Projects"
         }
       ]
     }
