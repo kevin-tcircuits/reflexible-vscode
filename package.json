@@ -53,8 +53,12 @@
         "title": "Reflexible: Start New Session"
       },
       {
-        "command": "reflexible.openPanel",
-        "title": "Reflexible: Open Chat Panel"
+        "command": "reflexible.startAISession",
+        "title": "Reflexible: Start AI Session"
+      },
+      {
+        "command": "reflexible.selectComputeMode",
+        "title": "Reflexible: Select Compute Mode"
       }
     ],
     "viewsContainers": {
@@ -69,7 +73,6 @@
     "views": {
       "reflexible": [
         {
-          "type": "webview",
           "id": "reflexible.chatView",
           "name": "Chat"
         }
